@@ -1,0 +1,47 @@
+name: Deploy on main
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'envs/**'
+      - 'modules/**'
+
+jobs:
+  detect:
+    name: Detect environment (test/prod)
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.set.outputs.env }}
+      dir: ${{ steps.set.outputs.dir }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: set
+        shell: bash
+        run: |
+          # Compare last two commits to see which env changed
+          LAST="$(git rev-parse HEAD)"
+          PREV="$(git rev-parse HEAD^)"
+          CHANGED="$(git diff --name-only $PREV $LAST | tr '\n' ' ')"
+          if echo "$CHANGED" | grep -q '^envs/prod/'; then
+            echo "env=prod" >> $GITHUB_OUTPUT
+            echo "dir=envs/prod" >> $GITHUB_OUTPUT
+          elif echo "$CHANGED" | grep -q '^envs/test/'; then
+            echo "env=test" >> $GITHUB_OUTPUT
+            echo "dir=envs/test" >> $GITHUB_OUTPUT
+          else
+            # If only modules changed, default to test
+            echo "env=test" >> $GITHUB_OUTPUT
+            echo "dir=envs/test" >> $GITHUB_OUTPUT
+          fi
+
+  deploy:
+    name: Plan → Approval → Apply
+    needs: detect
+    uses: ./.github/workflows/terraform-reusable.yml
+    with:
+      working_directory: ${{ needs.detect.outputs.dir }}
+      environment: ${{ needs.detect.outputs.env }}
+      tf_version: "1.9.5"
+    secrets: inherit

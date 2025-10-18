@@ -1,0 +1,70 @@
+name: PR Plan
+
+on:
+  pull_request:
+    paths:
+      - 'envs/**'
+      - 'modules/**'
+      - '.github/workflows/**'
+
+jobs:
+  detect:
+    name: Detect environment (test/prod)
+    runs-on: ubuntu-latest
+    outputs:
+      env: ${{ steps.set.outputs.env }}
+      dir: ${{ steps.set.outputs.dir }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: set
+        shell: bash
+        run: |
+          # List files changed between PR base and current head
+          CHANGED="$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | tr '\n' ' ')"
+          if echo "$CHANGED" | grep -q '^envs/prod/'; then
+            echo "env=prod" >> $GITHUB_OUTPUT
+            echo "dir=envs/prod" >> $GITHUB_OUTPUT
+          elif echo "$CHANGED" | grep -q '^envs/test/'; then
+            echo "env=test" >> $GITHUB_OUTPUT
+            echo "dir=envs/test" >> $GITHUB_OUTPUT
+          else
+            # Default to test if only modules changed
+            echo "env=test" >> $GITHUB_OUTPUT
+            echo "dir=envs/test" >> $GITHUB_OUTPUT
+          fi
+
+  plan-only:
+    name: Terraform Plan (PR)
+    needs: detect
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.5"
+
+      - name: Init
+        working-directory: ${{ needs.detect.outputs.dir }}
+        run: terraform init -input=false -reconfigure
+
+      - name: Fmt & Validate
+        working-directory: ${{ needs.detect.outputs.dir }}
+        run: |
+          terraform fmt -check
+          terraform validate
+
+      - name: Plan
+        working-directory: ${{ needs.detect.outputs.dir }}
+        run: terraform plan -input=false -no-color

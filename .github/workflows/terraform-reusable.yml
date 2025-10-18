@@ -1,0 +1,108 @@
+name: terraform-reusable
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: "Where to run Terraform (e.g., envs/test)"
+        required: true
+        type: string
+      environment:
+        description: "GitHub Environment name (test or prod)"
+        required: true
+        type: string
+      tf_version:
+        description: "Terraform version (>= 1.9 for lockfile)"
+        required: false
+        type: string
+        default: "1.9.5"
+      var_file:
+        description: "Optional -var-file (e.g., configs/spot.tfvars)"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  plan:
+    name: Terraform Plan
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write     # required for OIDC → AWS
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.tf_version }}
+
+      - name: Init
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform init -input=false -reconfigure
+
+      - name: Fmt & Validate
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          terraform fmt -check
+          terraform validate
+
+      - name: Plan
+        id: plan
+        working-directory: ${{ inputs.working_directory }}
+        run: |
+          if [ -n "${{ inputs.var_file }}" ]; then
+            terraform plan -input=false -no-color -out=tfplan -var-file="${{ inputs.var_file }}"
+          else
+            terraform plan -input=false -no-color -out=tfplan
+          fi
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: ${{ inputs.working_directory }}/tfplan
+
+  apply:
+    name: Terraform Apply (after approval)
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}   # ← approval gate (Settings → Environments)
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download approved plan
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ inputs.environment }}
+          path: /tmp/plan
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.tf_version }}
+
+      - name: Init (backend/providers)
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform init -input=false -reconfigure
+
+      - name: Apply approved plan
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform apply -input=false /tmp/plan/tfplan
