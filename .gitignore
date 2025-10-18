@@ -1,3 +1,8 @@
+# --- allow env tfvars for CI (non-secret values) ---
+!envs/**/terraform.tfvars
+!envs/**/terraform.tfvars.json
+!envs/**/.auto.tfvars
+!envs/**/.auto.tfvars.json
 # Terraform directories
 **/.terraform/*
 **/.terraform*
