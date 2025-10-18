@@ -15,23 +15,28 @@ jobs:
       env: ${{ steps.set.outputs.env }}
       dir: ${{ steps.set.outputs.dir }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # ensure base SHA exists locally
 
       - id: set
         shell: bash
         run: |
-          # List files changed between PR base and current head
-          CHANGED="$(git diff --name-only origin/${{ github.base_ref }}...${{ github.sha }} | tr '\n' ' ')"
+          set -euo pipefail
+          # Compare PR base SHA to current HEAD
+          CHANGED="$(git diff --name-only ${{ github.event.pull_request.base.sha }}...${{ github.sha }} | tr '\n' ' ')"
+
           if echo "$CHANGED" | grep -q '^envs/prod/'; then
-            echo "env=prod" >> $GITHUB_OUTPUT
-            echo "dir=envs/prod" >> $GITHUB_OUTPUT
+            echo "env=prod" >> "$GITHUB_OUTPUT"
+            echo "dir=envs/prod" >> "$GITHUB_OUTPUT"
           elif echo "$CHANGED" | grep -q '^envs/test/'; then
-            echo "env=test" >> $GITHUB_OUTPUT
-            echo "dir=envs/test" >> $GITHUB_OUTPUT
+            echo "env=test" >> "$GITHUB_OUTPUT"
+            echo "dir=envs/test" >> "$GITHUB_OUTPUT"
           else
-            # Default to test if only modules changed
-            echo "env=test" >> $GITHUB_OUTPUT
-            echo "dir=envs/test" >> $GITHUB_OUTPUT
+            # Default to test if only modules or non-env files changed
+            echo "env=test" >> "$GITHUB_OUTPUT"
+            echo "dir=envs/test" >> "$GITHUB_OUTPUT"
           fi
 
   plan-only:
@@ -42,7 +47,10 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
