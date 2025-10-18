@@ -12,21 +12,19 @@ on:
           - prod
         default: test
       confirm:
-        description: "Type: DESTROY-${{ github.event.inputs.environment }} to confirm"
+        description: "Type DESTROY-test or DESTROY-prod to confirm"
         required: true
         type: string
 
 permissions:
-  id-token: write   # for OIDC → AWS
+  id-token: write   # OIDC → AWS
   contents: read
 
 jobs:
   destroy:
     name: Destroy ${{ inputs.environment }}
     runs-on: ubuntu-latest
-
-    # Uses your GitHub Environment gate (manual approval before Apply).
-    # Make sure you created Environments named `test` and `prod` and added Required reviewers.
+    # Uses your GitHub Environment gate (manual approval before Apply)
     environment: ${{ inputs.environment }}
 
     env:
@@ -89,8 +87,7 @@ jobs:
         working-directory: ${{ steps.resolve.outputs.dir }}
         run: terraform plan -input=false -destroy -no-color -out=tfplan.destroy
 
-      # The job will pause here for manual approval because of the Environment gate ↑
-      # After you click "Approve and deploy", the next step runs:
+      # The job pauses here for manual approval due to the Environment gate ↑
 
       - name: Apply destroy plan (after approval)
         working-directory: ${{ steps.resolve.outputs.dir }}
