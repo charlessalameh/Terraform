@@ -1,5 +1,5 @@
 variable "name" {
-  type = string
+  type        = string
   description = "Name prefix for VPC and related resources."
 }
 

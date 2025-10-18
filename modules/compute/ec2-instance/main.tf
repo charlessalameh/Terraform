@@ -1,6 +1,6 @@
 # Latest Amazon Linux 2023 AMI for your architecture
 data "aws_ami" "al2023" {
-  owners      = ["137112412989"]  # Amazon
+  owners      = ["137112412989"] # Amazon
   most_recent = true
 
   filter {
@@ -63,4 +63,12 @@ resource "aws_instance" "this" {
   }
 
   tags = merge(var.tags, { Name = var.name })
+}
+
+output "instance_id" {
+  value = aws_instance.this.id
+}
+
+output "public_ip" {
+  value = aws_instance.this.public_ip
 }
