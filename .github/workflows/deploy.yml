@@ -2,46 +2,54 @@ name: Deploy on main
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
     paths:
       - 'envs/**'
       - 'modules/**'
+      - '.github/workflows/**'
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
-  detect:
-    name: Detect environment (test/prod)
+  deploy:
+    name: Terraform Apply (Test)
     runs-on: ubuntu-latest
-    outputs:
-      env: ${{ steps.set.outputs.env }}
-      dir: ${{ steps.set.outputs.dir }}
+    environment:
+      name: test     # Requires manual approval in GitHub → Environments
+      url: ${{ steps.apply.outputs.url || '' }}
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - id: set
-        shell: bash
-        run: |
-          # Compare last two commits to see which env changed
-          LAST="$(git rev-parse HEAD)"
-          PREV="$(git rev-parse HEAD^)"
-          CHANGED="$(git diff --name-only $PREV $LAST | tr '\n' ' ')"
-          if echo "$CHANGED" | grep -q '^envs/prod/'; then
-            echo "env=prod" >> $GITHUB_OUTPUT
-            echo "dir=envs/prod" >> $GITHUB_OUTPUT
-          elif echo "$CHANGED" | grep -q '^envs/test/'; then
-            echo "env=test" >> $GITHUB_OUTPUT
-            echo "dir=envs/test" >> $GITHUB_OUTPUT
-          else
-            # If only modules changed, default to test
-            echo "env=test" >> $GITHUB_OUTPUT
-            echo "dir=envs/test" >> $GITHUB_OUTPUT
-          fi
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-  deploy:
-    name: Plan → Approval → Apply
-    needs: detect
-    uses: ./.github/workflows/terraform-reusable.yml
-    with:
-      working_directory: ${{ needs.detect.outputs.dir }}
-      environment: ${{ needs.detect.outputs.env }}
-      tf_version: "1.9.5"
-    secrets: inherit
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.5
+
+      - name: Init
+        working-directory: envs/test
+        run: terraform init -input=false -reconfigure
+
+      - name: Validate
+        working-directory: envs/test
+        run: terraform validate
+
+      - name: Plan
+        working-directory: envs/test
+        run: terraform plan -input=false -no-color -out=tfplan
+
+      - name: Apply
+        id: apply
+        working-directory: envs/test
+        run: terraform apply -input=false -auto-approve tfplan
