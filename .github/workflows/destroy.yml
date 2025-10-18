@@ -1,0 +1,97 @@
+name: Terraform Destroy (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Which environment to destroy?"
+        required: true
+        type: choice
+        options:
+          - test
+          - prod
+        default: test
+      confirm:
+        description: "Type: DESTROY-${{ github.event.inputs.environment }} to confirm"
+        required: true
+        type: string
+
+permissions:
+  id-token: write   # for OIDC → AWS
+  contents: read
+
+jobs:
+  destroy:
+    name: Destroy ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+
+    # Uses your GitHub Environment gate (manual approval before Apply).
+    # Make sure you created Environments named `test` and `prod` and added Required reviewers.
+    environment: ${{ inputs.environment }}
+
+    env:
+      TF_VERSION: "1.9.5"
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+
+    steps:
+      - name: Guardrail — require exact confirmation phrase
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected="DESTROY-${{ inputs.environment }}"
+          if [ "${{ inputs.confirm }}" != "$expected" ]; then
+            echo "Expected confirmation: $expected"
+            echo "Got: ${{ inputs.confirm }}"
+            exit 1
+          fi
+
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Resolve working directory from input
+        id: resolve
+        shell: bash
+        run: |
+          case "${{ inputs.environment }}" in
+            test) echo "dir=envs/test" >> $GITHUB_OUTPUT ;;
+            prod) echo "dir=envs/prod" >> $GITHUB_OUTPUT ;;
+            *) echo "Unknown environment"; exit 1 ;;
+          esac
+          echo "Will destroy in: $(cat $GITHUB_OUTPUT)"
+
+      - name: Show files (debug)
+        working-directory: ${{ steps.resolve.outputs.dir }}
+        run: ls -la
+
+      - name: Terraform Init (reconfigure backend)
+        working-directory: ${{ steps.resolve.outputs.dir }}
+        run: terraform init -input=false -reconfigure
+
+      - name: Validate
+        working-directory: ${{ steps.resolve.outputs.dir }}
+        run: terraform validate
+
+      - name: Plan (destroy)
+        working-directory: ${{ steps.resolve.outputs.dir }}
+        run: terraform plan -input=false -destroy -no-color -out=tfplan.destroy
+
+      # The job will pause here for manual approval because of the Environment gate ↑
+      # After you click "Approve and deploy", the next step runs:
+
+      - name: Apply destroy plan (after approval)
+        working-directory: ${{ steps.resolve.outputs.dir }}
+        run: terraform apply -input=false -auto-approve tfplan.destroy
