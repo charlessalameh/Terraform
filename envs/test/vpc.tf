@@ -1,5 +1,8 @@
+############################################
+# VPC (basic public-only)
+############################################
 
-
+# Prefer only AZs that are usable in this account/region
 data "aws_availability_zones" "available" {
   state = "available"
 
@@ -15,5 +18,10 @@ module "vpc" {
   cidr_block          = "10.10.0.0/16"
   azs                 = slice(data.aws_availability_zones.available.names, 0, 2)
   public_subnet_cidrs = ["10.10.10.0/24", "10.10.20.0/24"]
-  tags                = local.common_tags
+
+  tags = {
+    Project     = var.project
+    Environment = var.env
+    Owner       = var.owner
+  }
 }

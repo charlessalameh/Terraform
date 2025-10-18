@@ -1,23 +1,36 @@
-variable "vpc_name" {
-  description = "Name prefix for VPC resources."
+############################################
+# Variables for the test environment
+############################################
+
+# Region used by the aws provider in providers.tf
+variable "aws_region" {
+  description = "AWS region for this environment."
   type        = string
-  default     = "demo-test"
 }
 
-variable "vpc_cidr_block" {
-  description = "VPC CIDR (RFC1918)."
+# Environment label used in names/tags (e.g., test, prod)
+variable "env" {
+  description = "Environment name."
   type        = string
-  default     = "10.10.0.0/16"
 }
 
-variable "vpc_azs" {
-  description = "AZs to use for public subnets."
-  type        = list(string)
-  default     = ["us-east-1a", "us-east-1b"]
+# Project name for tagging and naming
+variable "project" {
+  description = "Project identifier for tagging/naming."
+  type        = string
 }
 
-variable "public_subnet_cidrs" {
-  description = "CIDRs for public subnets (match vpc_azs length)."
-  type        = list(string)
-  default     = ["10.10.10.0/24", "10.10.20.0/24"]
+# Owner for tagging (billing/ops visibility)
+variable "owner" {
+  description = "Owner tag value (person or team)."
+  type        = string
 }
+
+# (Optional) common tags map if you prefer to reference one value
+# locals {
+#   common_tags = {
+#     Project     = var.project
+#     Environment = var.env
+#     Owner       = var.owner
+#   }
+# }

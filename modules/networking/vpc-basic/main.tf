@@ -7,13 +7,13 @@ resource "aws_vpc" "this" {
   tags = merge(var.tags, { Name = "${var.name}-vpc" })
 }
 
-# Internet Gateway for public subnets
+# Internet Gateway
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.this.id
   tags   = merge(var.tags, { Name = "${var.name}-igw" })
 }
 
-# Public route table with default route to the IGW
+# Public route table with default route to Internet
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
 
@@ -25,7 +25,7 @@ resource "aws_route_table" "public" {
   tags = merge(var.tags, { Name = "${var.name}-rt-public" })
 }
 
-# One public subnet per AZ; auto-assign public IPs
+# One public subnet per AZ
 resource "aws_subnet" "public" {
   for_each = { for i, az in var.azs : i => { az = az, cidr = var.public_subnet_cidrs[i] } }
 
@@ -37,7 +37,6 @@ resource "aws_subnet" "public" {
   tags = merge(var.tags, { Name = "${var.name}-public-${each.value.az}" })
 }
 
-# Associate public subnets with the public route table
 resource "aws_route_table_association" "public" {
   for_each       = aws_subnet.public
   subnet_id      = each.value.id

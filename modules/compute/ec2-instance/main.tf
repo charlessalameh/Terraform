@@ -1,4 +1,8 @@
-# Latest Amazon Linux 2023 AMI for your architecture
+############################################
+# EC2 module: instance + optional SG
+############################################
+
+# Latest Amazon Linux 2023 AMI
 data "aws_ami" "al2023" {
   owners      = ["137112412989"] # Amazon
   most_recent = true
@@ -19,7 +23,7 @@ data "aws_ami" "al2023" {
   }
 }
 
-# Auto-create a minimal SG (SSH) if caller didn't pass any
+# Auto-create a minimal SG (SSH) if caller didn't pass any SG IDs
 resource "aws_security_group" "auto" {
   count  = length(var.security_group_ids) == 0 ? 1 : 0
   name   = "${var.name}-sg"
@@ -63,12 +67,4 @@ resource "aws_instance" "this" {
   }
 
   tags = merge(var.tags, { Name = var.name })
-}
-
-output "instance_id" {
-  value = aws_instance.this.id
-}
-
-output "public_ip" {
-  value = aws_instance.this.public_ip
 }
