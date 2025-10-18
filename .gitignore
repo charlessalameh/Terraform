@@ -1,8 +1,3 @@
-# --- allow env tfvars for CI (non-secret values) ---
-!envs/**/terraform.tfvars
-!envs/**/terraform.tfvars.json
-!envs/**/.auto.tfvars
-!envs/**/.auto.tfvars.json
 # Terraform directories
 **/.terraform/*
 **/.terraform*
@@ -29,3 +24,9 @@ override.tf.json
 .vscode/
 .idea/
 .DS_Store
+
+# --- allow env tfvars for CI (non-secret values) ---  <-- keep these LAST so they win
+!envs/**/terraform.tfvars
+!envs/**/terraform.tfvars.json
+!envs/**/.auto.tfvars
+!envs/**/.auto.tfvars.json
