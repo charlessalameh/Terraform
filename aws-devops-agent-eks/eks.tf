@@ -42,9 +42,9 @@ module "eks" {
       # Enforce Kubernetes NetworkPolicies (needed for the network-block scenario)
       configuration_values = jsonencode({ enableNetworkPolicy = "true" })
     }
-    eks-pod-identity-agent          = { before_compute = true }
-    kube-proxy                      = {}
-    coredns                         = {}
+    eks-pod-identity-agent = { before_compute = true }
+    kube-proxy             = {}
+    coredns                = {}
     # Persistent volumes for MongoDB (Phase 5) — own IAM role via Pod Identity
     aws-ebs-csi-driver = {
       pod_identity_association = [{

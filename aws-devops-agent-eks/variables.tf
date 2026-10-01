@@ -67,3 +67,17 @@ variable "console_admin_arns" {
   type        = list(string)
   default     = []
 }
+
+# ---------- Phase 6: alarms ----------
+variable "alert_email" {
+  description = "Email for alarm notifications. Keep it out of git: export TF_VAR_alert_email=you@example.com"
+  type        = string
+  default     = null
+}
+
+# ---------- Phase 7: DevOps Agent ----------
+variable "devops_agent_webhook_url" {
+  description = "Webhook URL generated in the DevOps Agent console (step 7b). null = trigger Lambda not created yet. Pass via TF_VAR_devops_agent_webhook_url."
+  type        = string
+  default     = null
+}

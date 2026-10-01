@@ -14,3 +14,8 @@ provider "aws" {
     }
   }
 }
+
+# Phase 7 — AWS Cloud Control provider (AWS::DevOpsAgent::* resource types)
+provider "awscc" {
+  region = var.region
+}
