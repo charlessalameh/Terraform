@@ -37,7 +37,11 @@ module "eks" {
 
   # Managed add-ons (installed and versioned by AWS)
   addons = {
-    vpc-cni                         = { before_compute = true } # pod networking — must exist before nodes join
+    vpc-cni = {
+      before_compute = true # pod networking — must exist before nodes join
+      # Enforce Kubernetes NetworkPolicies (needed for the network-block scenario)
+      configuration_values = jsonencode({ enableNetworkPolicy = "true" })
+    }
     eks-pod-identity-agent          = { before_compute = true }
     kube-proxy                      = {}
     coredns                         = {}
@@ -65,6 +69,11 @@ module "eks" {
       min_size     = 1
       max_size     = 3
       desired_size = var.node_count
+
+      # Same label as the Azure lab's user node pool, so the manifests' nodeSelector works unchanged
+      labels = {
+        "nodepool-type" = "user"
+      }
 
       # Fallback for host-network pods (they can still reach the node role via IMDS).
       # EBS CSI uses its own Pod Identity role (see addon-iam.tf).

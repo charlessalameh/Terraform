@@ -1,0 +1,15 @@
+# EBS gp3 StorageClass for the EBS CSI driver add-on.
+# EKS does not create a gp3 class by default; MongoDB's PVC (storageClassName: gp3) uses this.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: gp3
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: ebs.csi.aws.com
+volumeBindingMode: WaitForFirstConsumer # create the disk in the AZ where the pod lands
+reclaimPolicy: Delete                   # disk is deleted with the PVC (keeps destroy clean)
+allowVolumeExpansion: true
+parameters:
+  type: gp3
+  encrypted: "true"
