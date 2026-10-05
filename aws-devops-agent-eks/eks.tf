@@ -13,14 +13,15 @@ module "eks" {
   endpoint_public_access       = true
   endpoint_public_access_cidrs = var.api_allowed_cidrs
 
-  # Gives the identity running Terraform (terraform-deployer) cluster-admin via an EKS access entry
-  enable_cluster_creator_admin_permissions = true
+  # Cluster admins are listed explicitly (local.cluster_admin_arns) instead of "whoever ran Terraform",
+  # so the cluster works the same whether it was built from the Mac or from GitHub Actions.
+  enable_cluster_creator_admin_permissions = false
 
   # Extra Kubernetes admins, e.g. the identity you use in the AWS Console.
   # IAM permissions alone don't show pods/nodes in the console: the principal also
   # needs an EKS access entry (Kubernetes RBAC side).
   access_entries = {
-    for arn in local.console_admin_arns : replace(arn, "/[^a-zA-Z0-9]/", "-") => {
+    for arn in local.cluster_admin_arns : replace(arn, "/[^a-zA-Z0-9]/", "-") => {
       principal_arn = arn
       policy_associations = {
         admin = {
@@ -86,9 +87,23 @@ module "eks" {
 
 data "aws_caller_identity" "current" {}
 
+# The GitHub Actions role (created by ci/), if it exists — empty set otherwise, so local runs never fail
+data "aws_iam_roles" "ci" {
+  name_regex = "^${var.ci_role_name}$"
+}
+
 locals {
-  # Default: the account root user (what you use in the console). Override with var.console_admin_arns.
+  account_id = data.aws_caller_identity.current.account_id
+
+  # Console identity — default: the account root user. Override with var.console_admin_arns.
   console_admin_arns = length(var.console_admin_arns) > 0 ? var.console_admin_arns : [
-    "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"
+    "arn:aws:iam::${local.account_id}:root"
   ]
+
+  # Everyone who gets cluster-admin: console user + local Terraform user + GitHub Actions role (if created)
+  cluster_admin_arns = distinct(concat(
+    local.console_admin_arns,
+    var.local_admin_user == "" ? [] : ["arn:aws:iam::${local.account_id}:user/${var.local_admin_user}"],
+    tolist(data.aws_iam_roles.ci.arns),
+  ))
 }

@@ -5,7 +5,9 @@ on:
     paths:
       - 'envs/**'
       - 'modules/**'
-      - '.github/workflows/**'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/pr-plan.yml'
+      - '.github/workflows/terraform-reusable.yml'
 
 jobs:
   detect:

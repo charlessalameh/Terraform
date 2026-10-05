@@ -264,6 +264,62 @@ terraform state list            # empty
 - *Secret already scheduled for deletion* on the next rebuild → not expected (`recovery_window_in_days = 0`); if it
   happens: `aws secretsmanager delete-secret --secret-id devops-agent-lab/devops-agent-webhook --force-delete-without-recovery --region eu-central-1`.
 
+## CI/CD — run the lab from GitHub Actions
+
+Workflow `.github/workflows/aws-lab.yml` (manual, **Actions → AWS DevOps Agent lab → Run workflow**, also from the
+GitHub mobile app):
+
+| action | What happens | Approval |
+|---|---|---|
+| `plan` | init · fmt · validate · plan → plan summary on the run page | none (environment `aws-lab-plan`) |
+| `apply` | plan → **you approve** → applies *that exact plan* (plan file + provider lock passed as artifact) → deploys the store app | `aws-lab` |
+| `break` | applies the chosen scenario as a **blind copy** (scenario labels stripped) | `aws-lab` (an investigation costs money) |
+| `restore` | healthy app back, scenario leftovers removed | `aws-lab` |
+| `destroy` | type `DESTROY-aws-lab` → **you approve** → `destroy.sh` (app → terraform destroy → log groups → orphan check) | `aws-lab` |
+
+How it logs in: GitHub OIDC → IAM role **`gha-aws-devops-lab`** (no AWS keys in GitHub). The role trusts **only** jobs
+running in the environments `aws-lab-plan` / `aws-lab` of this repo — not other branches' jobs, not PRs — and may
+only create/modify IAM roles named `devops-agent-lab-*` / `default-eks-node-group-*`. The role is also given
+cluster-admin automatically (`eks.tf` → `cluster_admin_arns`), so `kubectl` works in the pipeline and on your Mac
+whoever built the cluster. One run at a time (`concurrency: aws-lab`).
+
+### One-time setup
+
+```bash
+cd ~/Projects/"AZ Practice"/Terraform
+terraform fmt -recursive aws-devops-agent-eks          # the workflow runs fmt -check
+
+# 1. IAM role for the pipeline (own state: aws-devops-agent-eks/ci/terraform.tfstate)
+cd aws-devops-agent-eks/ci && terraform init && terraform apply && cd ../..
+ROLE_ARN=$(terraform -chdir=aws-devops-agent-eks/ci output -raw ci_role_arn)
+
+# 2. GitHub environments
+ME=$(gh api user --jq .id)
+gh api -X PUT repos/charlessalameh/Terraform/environments/aws-lab-plan
+gh api -X PUT repos/charlessalameh/Terraform/environments/aws-lab \
+  --input - <<JSON
+{"reviewers":[{"type":"User","id":$ME}],"prevent_self_review":false}
+JSON
+
+# 3. Secrets (repository level)
+gh secret set AWS_LAB_ROLE_ARN -R charlessalameh/Terraform --body "$ROLE_ARN"
+gh secret set LAB_ALERT_EMAIL  -R charlessalameh/Terraform        # prompts, nothing echoed
+```
+
+4. **Merge to `main`.** GitHub only lists `workflow_dispatch` workflows that exist on the default branch.
+   The merge changes `modules/**` and `deploy.yml`, so **`deploy.yml` will ask for approval to apply `envs/test` —
+   reject it.** (`deploy.yml`/`pr-plan.yml` no longer trigger on every workflow file, only on their own.)
+5. Optional hardening: Settings → Environments → `aws-lab` / `aws-lab-plan` → *Deployment branches* → `main` only.
+
+### The webhook (still one manual step)
+
+1. Run `apply` → the Agent Space exists, no trigger Lambda yet.
+2. Console → Agent Space → Capabilities → Webhook → Generate (HMAC). From your Mac store the secret
+   (`read -rs` method, Phase 7b) — it never goes to GitHub.
+3. `gh secret set LAB_WEBHOOK_URL -R charlessalameh/Terraform` (paste the URL) → run `apply` again → Lambda wired.
+
+Before `destroy`: delete the webhook in the console (Terraform didn't create it).
+
 ## Cost
 
 | Item | ≈ per hour (Frankfurt) |

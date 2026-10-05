@@ -81,3 +81,16 @@ variable "devops_agent_webhook_url" {
   type        = string
   default     = null
 }
+
+# ---------- Cluster admins / CI ----------
+variable "local_admin_user" {
+  description = "IAM user you run Terraform/kubectl with from your Mac (gets cluster-admin). \"\" to skip."
+  type        = string
+  default     = "terraform-deployer"
+}
+
+variable "ci_role_name" {
+  description = "IAM role GitHub Actions uses for this lab (created by ci/). Gets cluster-admin if it exists."
+  type        = string
+  default     = "gha-aws-devops-lab"
+}

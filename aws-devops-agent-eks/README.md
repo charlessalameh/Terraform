@@ -8,7 +8,7 @@ can be compared side by side.
 
 ![Architecture](docs/diagrams/architecture.drawio.svg)
 
-📘 **Step-by-step guide:** [docs/LAB-GUIDE.md](docs/LAB-GUIDE.md) · 📝 **Journal:** [docs/LAB-JOURNAL.md](docs/LAB-JOURNAL.md)
+🧠 **How it works & the agent explained:** [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) · 📘 **Step-by-step guide:** [docs/LAB-GUIDE.md](docs/LAB-GUIDE.md) · 📝 **Journal:** [docs/LAB-JOURNAL.md](docs/LAB-JOURNAL.md)
 
 - **Region:** eu-central-1 (Frankfurt) — one of the 6 AWS DevOps Agent regions
 - **Network:** reuses `../modules/networking/vpc-basic` (public subnets only, **no NAT gateway** → saves ~$32/month)
@@ -37,4 +37,4 @@ can be compared side by side.
 
 EKS control plane ~$0.10/h + 2 × t4g.medium ~$0.08/h + small EBS/CloudWatch → **~$0.20/h (~$5/day)**.
 DevOps Agent bills per second of investigation time (~$29.88 per agent-hour per the AWS sample).
-**Destroy after every session** with `./destroy.sh` — EKS has no "stop" like `az aks stop`.
+**Push-button:** build, break and destroy from GitHub Actions (`aws-lab.yml`, see the guide's CI/CD section). **Destroy after every session** with `./destroy.sh` — EKS has no "stop" like `az aks stop`.

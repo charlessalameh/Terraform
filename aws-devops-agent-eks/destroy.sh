@@ -16,7 +16,7 @@ if kubectl get ns pets >/dev/null 2>&1; then
 fi
 
 echo "==> 2/4 terraform destroy (EKS, node group, add-ons, alarms, SNS, VPC)"
-terraform destroy
+terraform destroy ${AUTO_APPROVE:+-auto-approve}   # AUTO_APPROVE=1 in CI (approval happens in GitHub)
 
 echo "==> 3/4 Deleting Container Insights log groups (created by the agent, not Terraform)"
 for lg in $(aws logs describe-log-groups --region "$REGION" \
