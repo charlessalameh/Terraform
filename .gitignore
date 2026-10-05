@@ -30,3 +30,8 @@ override.tf.json
 !envs/**/terraform.tfvars.json
 !envs/**/.auto.tfvars
 !envs/**/.auto.tfvars.json
+# Phase 7 build output (Lambda zip)
+**/.build/
+
+# Personal notes and screenshots (never pushed)
+**/_private/

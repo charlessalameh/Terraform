@@ -1,0 +1,169 @@
+name: AWS DevOps Agent lab
+
+# Push-button lab: plan / apply / break / destroy from the Actions tab (or the GitHub mobile app).
+# Setup (once): aws-devops-agent-eks/ci (IAM role), environments "aws-lab-plan" + "aws-lab", secrets — see docs/LAB-GUIDE.md "CI/CD".
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do"
+        type: choice
+        options: [plan, apply, break, restore, destroy]
+        default: plan
+      scenario:
+        description: "Only for action=break (blind copy is used: no scenario labels)"
+        type: choice
+        options: [oom-killed, crash-loop, image-pull-backoff, probe-failure, missing-config, pending-pods, mongodb-down, service-mismatch, network-block, high-cpu]
+        default: oom-killed
+      confirm:
+        description: "Only for action=destroy: type DESTROY-aws-lab"
+        type: string
+        default: ""
+
+permissions:
+  id-token: write   # OIDC → AWS (no stored keys)
+  contents: read
+
+concurrency:
+  group: aws-lab    # never two lab runs at the same time (shared state + cluster)
+  cancel-in-progress: false
+
+env:
+  TF_VERSION: "1.16.4"
+  AWS_REGION: eu-central-1
+  CLUSTER: devops-agent-lab-eks
+  WORKDIR: aws-devops-agent-eks
+
+jobs:
+  # ---------------------------------------------------------------- plan (no approval)
+  plan:
+    if: inputs.action == 'plan' || inputs.action == 'apply'
+    runs-on: ubuntu-latest
+    environment: aws-lab-plan
+    defaults: { run: { working-directory: aws-devops-agent-eks } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_LAB_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}", terraform_wrapper: false }
+      - name: Lab inputs (only set when the secret exists — empty would break the null checks)
+        env:
+          ALERT_EMAIL: ${{ secrets.LAB_ALERT_EMAIL }}
+          WEBHOOK_URL: ${{ secrets.LAB_WEBHOOK_URL }}
+        run: |
+          [ -n "$ALERT_EMAIL" ] && echo "TF_VAR_alert_email=$ALERT_EMAIL" >> "$GITHUB_ENV" || true
+          [ -n "$WEBHOOK_URL" ] && echo "TF_VAR_devops_agent_webhook_url=$WEBHOOK_URL" >> "$GITHUB_ENV" || true
+      - run: terraform init -input=false
+      - run: terraform fmt -check -recursive
+      - run: terraform validate
+      - name: Plan
+        run: |
+          terraform plan -input=false -no-color -out=tfplan | tee plan.txt
+          { echo '### Terraform plan'; echo '```'; grep -E '^(Plan:|No changes)' plan.txt || true; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: |
+            aws-devops-agent-eks/tfplan
+            aws-devops-agent-eks/.terraform.lock.hcl
+          retention-days: 1
+          include-hidden-files: true   # .terraform.lock.hcl → apply uses the exact provider versions of the plan
+
+  # ---------------------------------------------------------------- apply (approval) + app
+  apply:
+    if: inputs.action == 'apply'
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: aws-lab            # ← required reviewer: you approve after reading the plan summary
+    timeout-minutes: 60
+    defaults: { run: { working-directory: aws-devops-agent-eks } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: tfplan, path: aws-devops-agent-eks }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_LAB_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}", terraform_wrapper: false }
+      - run: terraform init -input=false
+      - name: Apply the reviewed plan
+        run: terraform apply -input=false tfplan
+      - name: Deploy the store app
+        run: |
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER"
+          kubectl apply -f k8s/base/storageclass-gp3.yaml
+          kubectl apply -f k8s/base/application.yaml
+          kubectl -n pets rollout status deploy --timeout=10m
+          kubectl get pods -n pets
+          { echo '### Lab is up'; echo '```'; kubectl get nodes -o wide; kubectl get pods -n pets; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------- break / restore (approval: an investigation costs money)
+  chaos:
+    if: inputs.action == 'break' || inputs.action == 'restore'
+    runs-on: ubuntu-latest
+    environment: aws-lab
+    defaults: { run: { working-directory: aws-devops-agent-eks } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_LAB_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - run: aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER"
+      - name: Break (blind copy, labels stripped)
+        if: inputs.action == 'break'
+        run: |
+          f="k8s/scenarios/${{ inputs.scenario }}.yaml"
+          sed -E '/^[[:space:]]+(scenario|sre-demo):/d; /^#/d' "$f" > /tmp/scenario.yaml
+          date -u +"T0 %Y-%m-%dT%H:%M:%SZ"
+          kubectl apply -f /tmp/scenario.yaml
+          echo "### Broke: ${{ inputs.scenario }} at $(date -u +%H:%M:%S) UTC — watch the alarm and the DevOps Agent web app" >> "$GITHUB_STEP_SUMMARY"
+      - name: Restore
+        if: inputs.action == 'restore'
+        run: |
+          kubectl apply -f k8s/base/application.yaml
+          kubectl delete deployment cpu-stress-test resource-hog unhealthy-service misconfigured-service -n pets --ignore-not-found
+          kubectl delete networkpolicy deny-order-service -n pets --ignore-not-found
+          kubectl -n pets rollout status deploy --timeout=5m
+          kubectl get pods -n pets
+
+  # ---------------------------------------------------------------- destroy (phrase + approval)
+  destroy:
+    if: inputs.action == 'destroy'
+    runs-on: ubuntu-latest
+    environment: aws-lab
+    timeout-minutes: 60
+    defaults: { run: { working-directory: aws-devops-agent-eks } }
+    steps:
+      - name: Guardrail — confirmation phrase
+        working-directory: .
+        run: |
+          [ "${{ inputs.confirm }}" = "DESTROY-aws-lab" ] || { echo "Type DESTROY-aws-lab in 'confirm'"; exit 1; }
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_LAB_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}", terraform_wrapper: false }
+      - name: Lab inputs
+        env:
+          ALERT_EMAIL: ${{ secrets.LAB_ALERT_EMAIL }}
+          WEBHOOK_URL: ${{ secrets.LAB_WEBHOOK_URL }}
+        run: |
+          [ -n "$ALERT_EMAIL" ] && echo "TF_VAR_alert_email=$ALERT_EMAIL" >> "$GITHUB_ENV" || true
+          [ -n "$WEBHOOK_URL" ] && echo "TF_VAR_devops_agent_webhook_url=$WEBHOOK_URL" >> "$GITHUB_ENV" || true
+      - run: terraform init -input=false
+      - name: Teardown (destroy.sh — app first, then terraform, then leftovers)
+        env: { AUTO_APPROVE: "1" }
+        run: |
+          aws eks update-kubeconfig --region "$AWS_REGION" --name "$CLUSTER" 2>/dev/null || echo "cluster already gone"
+          ./destroy.sh
+          echo "### Lab destroyed — remember: delete the webhook in the DevOps Agent console if it still exists" >> "$GITHUB_STEP_SUMMARY"
