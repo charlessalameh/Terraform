@@ -70,7 +70,7 @@ resource "aws_cloudwatch_metric_alarm" "pod" {
 
 resource "aws_cloudwatch_metric_alarm" "node_cpu" {
   alarm_name          = "${var.cluster_name}-node-cpu-high"
-  alarm_description   = "Average node CPU above 80% for 3 minutes (noisy neighbour / high-cpu scenario)"
+  alarm_description   = "Average node CPU above 80% for 3 minutes"
   comparison_operator = "GreaterThanThreshold"
   threshold           = 80
   evaluation_periods  = 3

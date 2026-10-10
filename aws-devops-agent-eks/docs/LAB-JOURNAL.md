@@ -118,6 +118,6 @@ strip those labels (same applies to the Azure run, which used the same manifests
 ## Next
 
 - [ ] Restore app, confirm alarms return to OK
-- [ ] Check investigation cost in Billing (next day)
+- [x] Actual cost: **about $2.50 for the whole session** (infrastructure + agent), covered by the AWS Free Tier
 - [ ] Rebuild with screenshots (`_private/SCREENSHOT-RUNBOOK.md`), then `./destroy.sh`
 - [ ] Optional blind test: remove scenario labels, try crash-loop / image-pull / pending
